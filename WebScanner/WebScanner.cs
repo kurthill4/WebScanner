@@ -38,6 +38,7 @@ namespace WebScanner
         public string[] Include { get; set; } = Array.Empty<string>();
         public string[] Exclude { get; set; } = Array.Empty<string>();
         public bool Verbose { get; set; }
+        public int? Timeout { get; set; } // Timeout in seconds
 
         public void AddUri(string uriString)
         {
@@ -51,7 +52,7 @@ namespace WebScanner
         }
     }
 
-    class WebScanner
+    partial class WebScanner
     {
         static ScanConfig _config = new ScanConfig();
         
@@ -86,6 +87,10 @@ namespace WebScanner
                 aliases: new[] { "--verbose", "-v" },
                 description: "Enable verbose output."
             );
+            var timeoutOption = new Option<int?>(
+                aliases: new[] { "--timeout", "-t" },
+                description: "Timeout in seconds for HTTP requests (default: 100)."
+            );
 
             var rootCommand = new RootCommand("WebScanner utility")
             {
@@ -95,23 +100,25 @@ namespace WebScanner
                 depthOption,
                 includeOption,
                 excludeOption,
-                verboseOption
+                verboseOption,
+                timeoutOption
             };
 
-            Action<string?, FileInfo?, FileInfo?, int?, string[], string[], bool> handlerWrapper = ParseCommandLine;
+            Action<string?, FileInfo?, FileInfo?, int?, string[], string[], bool, int?> handlerWrapper = ParseCommandLine;
 
-            rootCommand.SetHandler(handlerWrapper, urlArgument, fileOption, outputOption, depthOption, includeOption, excludeOption, verboseOption);
+            rootCommand.SetHandler(handlerWrapper, urlArgument, fileOption, outputOption, depthOption, includeOption, excludeOption, verboseOption, timeoutOption);
 
             return rootCommand;
         }
 
-        private static void ParseCommandLine(string? url, FileInfo? file, FileInfo? output, int? depth, string[] include, string[] exclude, bool verbose)
+        private static void ParseCommandLine(string? url, FileInfo? file, FileInfo? output, int? depth, string[] include, string[] exclude, bool verbose, int? timeout)
         {
             _config.Output = output;
             _config.Depth = depth;
             _config.Include = include;
             _config.Exclude = exclude;
             _config.Verbose = verbose;
+            _config.Timeout = timeout;
 
             /// <AINOTE CODE-DIRECTION>
             /// Populate _config with the specified URL's provided via command line or file.  To avoid repetitive code,
@@ -162,17 +169,8 @@ namespace WebScanner
             int result = await rootCommand.InvokeAsync(args);
 
             // Print out the resulting scan config after command line parsing
-            Console.WriteLine("ScanConfig:");
-            Console.WriteLine($"  Output: {_config.Output}");
-            Console.WriteLine($"  Depth: {_config.Depth}");
-            Console.WriteLine($"  Include: [{string.Join(", ", _config.Include)}]");
-            Console.WriteLine($"  Exclude: [{string.Join(", ", _config.Exclude)}]");
-            Console.WriteLine($"  Verbose: {_config.Verbose}");
-            Console.WriteLine($"  Uris:");
-            foreach (var u in _config.Uris)
-            {
-                Console.WriteLine($"    {u}");
-            }
+            PrintConfig();
+            
 
             if (_config.Verbose)
             {
@@ -180,16 +178,8 @@ namespace WebScanner
             }
 
             UrlScanner scanner = await UrlScanner.CreateAsync(_config.Uris[0]);
-            if (scanner == null)
-            {
-                Console.WriteLine("Failed to create UrlScanner instance.");
-                result = 1; // Indicate failure
-            }
-            else
-            {
-                // Perform the scan (this is a placeholder, actual scanning logic would go here)
-                Console.WriteLine($"Scanning completed for: {_config.Uris[0]}");
-            }
+            Console.WriteLine($"Scanning completed for: {_config.Uris[0]}");
+
 
             // Print the list of links found in the scanned page
             var links = scanner.ExtractHyperlinks();
