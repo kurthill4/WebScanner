@@ -6,10 +6,16 @@ namespace UrlScannerLib;
 
 public partial class UrlScanner
 {
+    private static readonly HttpClient _httpClient = new HttpClient();
     private readonly Uri _uri;
     private readonly string _baseaddress;
     private HttpResponseMessage? _response;
     private string? _content;
+
+    // Error tracking properties
+    public bool IsSuccess { get; private set; } = true;
+    public string? ErrorMessage { get; private set; }
+    public Exception? Exception { get; private set; }
 
     private UrlScanner(Uri uri)
     {
@@ -39,7 +45,6 @@ public partial class UrlScanner
     }
 
     // CreateAsync: Asynchronously creates a UrlScanner instance for the specified URI.
-    
     public static async Task<UrlScanner> CreateAsync(Uri uri)
     {
         if (uri == null)
@@ -52,27 +57,46 @@ public partial class UrlScanner
         }
 
         // Load the page asynchronously
-        HttpResponseMessage response = await LoadPageAsync(uri);
-        UrlScanner scanner = new UrlScanner(uri)
+        HttpResponseMessage? response = null;
+        string? content = null;
+        Exception? exception = null;
+        string? errorMessage = null;
+        bool isSuccess = false;
+        try
+        {
+            response = await LoadPageAsync(uri);
+            content = await response.Content.ReadAsStringAsync();
+            isSuccess = response.IsSuccessStatusCode;
+            if (!isSuccess)
+            {
+                errorMessage = $"HTTP error: {(int)response.StatusCode} {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            exception = ex;
+            errorMessage = ex.Message;
+        }
+
+        var scanner = new UrlScanner(uri)
         {
             _response = response,
-            _content = await response.Content.ReadAsStringAsync()
+            _content = content,
         };
-
+        scanner.IsSuccess = isSuccess;
+        scanner.ErrorMessage = errorMessage;
+        scanner.Exception = exception;
         return scanner;
     }
+
     // LoadPage: Asynchronously loads the page at the specified URL.
-    // Do not throw an exception for failed loads, just return the response.
-    // This allows the caller to determine if this is a broken link.
-    // This is a static function as it may be useful as a utility function.
+    // Do not throw an exception for failed loads, just return the response (or null if network error).
     public static async Task<HttpResponseMessage> LoadPageAsync(Uri uri)
     {
         if (uri == null)
             throw new ArgumentNullException(nameof(uri), "URI cannot be null.");
-
-        using HttpClient httpClient = new HttpClient();
-        HttpResponseMessage response = await httpClient.GetAsync(uri);
-        return response;
+        // Let exceptions propagate to the caller for proper error reporting
+        return await _httpClient.GetAsync(uri);
     }
 
     public string? GetContent()
@@ -89,13 +113,24 @@ public List<string> ExtractHyperlinks()
         var doc = new HtmlDocument();
         doc.LoadHtml(_content);
 
-        foreach (var link in doc.DocumentNode.SelectNodes("//a[@href]") ?? new HtmlNodeCollection(null))
+        HtmlNodeCollection? nodes = doc.DocumentNode.SelectNodes("//a[@href]");
+        if (nodes != null)
         {
-            var href = link.GetAttributeValue("href", null);
-            if (!string.IsNullOrEmpty(href))
-                links.Add(href);
+            foreach (var node in nodes)
+            {
+                string href = node.GetAttributeValue("href", String.Empty);
+                if (!string.IsNullOrEmpty(href))
+                    links.Add(href);
+            }
         }
+
         return links;
+    }
+
+    public static void SetTimeout(int seconds)
+    {
+        if (seconds <= 0) throw new ArgumentOutOfRangeException(nameof(seconds), "Timeout must be positive.");
+        _httpClient.Timeout = TimeSpan.FromSeconds(seconds);
     }
 
 }
