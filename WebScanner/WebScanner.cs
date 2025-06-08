@@ -173,6 +173,38 @@ namespace WebScanner
             {
                 Console.WriteLine($"    {u}");
             }
+
+            if (_config.Verbose)
+            {
+                Console.WriteLine($"Scanning URL: {_config.Uris[0]}");
+            }
+
+            UrlScanner scanner = await UrlScanner.CreateAsync(_config.Uris[0]);
+            if (scanner == null)
+            {
+                Console.WriteLine("Failed to create UrlScanner instance.");
+                result = 1; // Indicate failure
+            }
+            else
+            {
+                // Perform the scan (this is a placeholder, actual scanning logic would go here)
+                Console.WriteLine($"Scanning completed for: {_config.Uris[0]}");
+            }
+
+            // Print the list of links found in the scanned page
+            var links = scanner.ExtractHyperlinks();
+            if (links.Count > 0)
+            {
+                Console.WriteLine("Links found:");
+                foreach (var link in links)
+                {
+                    Console.WriteLine($"  {link}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("No links found.");
+            }
             return result;
         }
     }
